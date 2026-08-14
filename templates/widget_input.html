@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N.E.K.O 输入</title>
+    <script src="/static/libs/ogg-opus-decoder.min.js"></script>
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; background: #F5FAFF; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
+        #wrap { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; position: relative; }
+        #status { font-size: 11px; color: #8AA6B8; padding: 3px 10px; text-align: center; }
+        #input { flex: 1; border: none; background: transparent; padding: 8px 10px; font-size: 14px; line-height: 1.5; outline: none; resize: none; white-space: pre-wrap; word-break: break-word; }
+        #bar { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #DDEEF9; background: #FFF; }
+        #send { border: none; border-radius: 16px; background: #4AA8E8; color: #FFF; padding: 0 16px; font-size: 14px; cursor: pointer; }
+        #send:disabled { background: #B9D4EA; }
+        #cam { border: none; border-radius: 16px; background: #E8F3FB; color: #335566; padding: 0 12px; font-size: 13px; cursor: pointer; }
+        #proactive-bubble { position: absolute; left: 8px; right: 8px; bottom: 92px; background: rgba(255,255,255,0.97); border: 1px solid #BFDCF0; border-radius: 10px; padding: 8px 10px; font-size: 13px; line-height: 1.5; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; word-break: break-word; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+<div id="wrap">
+    <div id="proactive-bubble" hidden></div>
+    <div id="status">连接中…</div>
+    <textarea id="input" placeholder="给 YUI 发消息"></textarea>
+    <div id="bar">
+        <button id="cam" title="让猫娘看看">看</button>
+        <button id="send">发送</button>
+    </div>
+</div>
+<script>
+(function () {
+    var LANLAN = 'YUI';
+    var ws = null;
+    var connecting = false;
+    var replyText = '';
+    // 协议：start_session(new_session:true) → 等 session_started → 再发 stream_data。
+    var pendingRequestId = null;
+    var pendingText = null;
+    var sessionReady = false;
+
+    // ---- 语音播放（OggOpus 流式解码 → AudioContext）----
+    var audioCtx = null;
+    var opusDecoder = null;
+    var audioFloatChunks = [];
+    var audioSampleRate = 48000;
+    var audioSpeechId = null;
+    var audioDecodeChain = Promise.resolve();
+
+    function ensureAudioCtx() {
+        if (!audioCtx) {
+            try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; }
+        }
+        return audioCtx;
+    }
+
+    async function ensureOpusDecoder() {
+        if (opusDecoder) return opusDecoder;
+        try {
+            var m = window["ogg-opus-decoder"];
+            if (!m || !m.OggOpusDecoder) return null;
+            opusDecoder = new m.OggOpusDecoder();
+            await opusDecoder.ready;
+        } catch (e) { opusDecoder = null; }
+        return opusDecoder;
+    }
+
+    // 逐帧处理音频：Ogg(Opus) 走流式解码器；PCM Int16 直接转 float32
+    function accumulateAudioFrame(bytes) {
+        audioDecodeChain = audioDecodeChain.then(async function () {
+            try {
+                var isOgg = bytes.length >= 4 && bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53;
+                if (isOgg) {
+                    var dec = await ensureOpusDecoder();
+                    if (!dec) { console.warn('[widget-audio] no decoder'); return; }
+                    var res = await dec.decode(bytes);
+                    if (res && res.channelData && res.channelData[0] && res.channelData[0].length) {
+                        audioFloatChunks.push(res.channelData[0]);
+                        if (res.sampleRate) audioSampleRate = res.sampleRate;
+                    }
+                } else {
+                    var int16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.length / 2));
+                    var f32 = new Float32Array(int16.length);
+                    for (var i = 0; i < int16.length; i++) f32[i] = int16[i] / 32768.0;
+                    audioFloatChunks.push(f32);
+                    audioSampleRate = 48000;
+                }
+            } catch (e) { console.warn('[widget-audio] frame decode failed:', e); }
+        });
+    }
+
+    function flushAndPlay() {
+        audioDecodeChain = audioDecodeChain.then(async function () {
+            try {
+                var dec = await ensureOpusDecoder();
+                if (dec && typeof dec.flush === 'function') {
+                    var res = await dec.flush();
+                    if (res && res.channelData && res.channelData[0] && res.channelData[0].length) {
+                        audioFloatChunks.push(res.channelData[0]);
+                        if (res.sampleRate) audioSampleRate = res.sampleRate;
+                    }
+                }
+            } catch (e) { console.warn('[widget-audio] flush failed:', e); }
+            if (!audioFloatChunks.length) return;
+            var total = 0;
+            audioFloatChunks.forEach(function (c) { total += c.length; });
+            console.log('[widget-audio] decoded samples:', total, 'rate:', audioSampleRate);
+            var merged = new Float32Array(total);
+            var off = 0;
+            audioFloatChunks.forEach(function (c) { merged.set(c, off); off += c.length; });
+            audioFloatChunks = [];
+            var ctx = ensureAudioCtx();
+            if (!ctx) return;
+            if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (e) {} }
+            var audioBuf = ctx.createBuffer(1, total, audioSampleRate || 48000);
+            audioBuf.copyToChannel(merged, 0);
+            var src = ctx.createBufferSource();
+            src.buffer = audioBuf;
+            src.connect(ctx.destination);
+            console.log('[widget-audio] playing');
+            src.start();
+        });
+    }
+
+    var input = document.getElementById('input');
+    var sendBtn = document.getElementById('send');
+    var statusEl = document.getElementById('status');
+    var camBtn = document.getElementById('cam');
+
+    function setStatus(t) { statusEl.textContent = t; }
+
+    // ---- 主动搭话（YUI 主动发消息）----
+    // 主动搭话也以 gemini_response 到达；区分方式：无进行中的用户请求。
+    var pendingUserRequest = false;
+    var proactiveVisible = false;
+    var proactiveTimer = null;
+
+    function showProactiveStart(text) {
+        var b = document.getElementById('proactive-bubble');
+        if (!b) return;
+        b.textContent = 'YUI：' + text;
+        b.hidden = false;
+        proactiveVisible = true;
+        clearTimeout(proactiveTimer);
+        proactiveTimer = setTimeout(function () { b.hidden = true; proactiveVisible = false; }, 12000);
+    }
+
+    function showProactiveAppend(text) {
+        if (!proactiveVisible) return;
+        var b = document.getElementById('proactive-bubble');
+        if (b) b.textContent += text;
+    }
+
+    function connect() {
+        if (connecting || (ws && ws.readyState === WebSocket.OPEN)) return;
+        connecting = true;
+        sessionReady = false;
+        setStatus('连接中…');
+        var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        ws = new WebSocket(proto + '://' + location.host + '/ws/' + encodeURIComponent(LANLAN));
+        ws.binaryType = 'arraybuffer';
+        ws.onopen = function () {
+            connecting = false;
+            setStatus('建立会话…');
+            // 首次连接建立一次 text 会话；之后发送只走 stream_data（重复
+            // start_session(new_session:true) 会重置会话导致回复丢失）。
+            ws.send(JSON.stringify({ action: 'start_session', input_type: 'text', new_session: true, request_id: newRequestId() }));
+        };
+        ws.onclose = function () {
+            connecting = false;
+            sessionReady = false;
+            pendingText = null;
+            audioFloatChunks = [];
+            audioDecodeChain = Promise.resolve();
+            setStatus('已断开，重连中…');
+            setTimeout(connect, 3000);
+        };
+        ws.onmessage = function (ev) {
+            // 音频数据是 base64 文本帧（非 JSON）：atob 解码后流式喂给解码器
+            if (typeof ev.data === 'string' && ev.data.length > 0 && ev.data.charAt(0) !== '{') {
+                try {
+                    var bin = atob(ev.data);
+                    var bytes = new Uint8Array(bin.length);
+                    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                    accumulateAudioFrame(bytes);
+                } catch (e) { console.warn('[widget-audio] base64 decode failed:', e); }
+                return;
+            }
+            if (ev.data instanceof ArrayBuffer) {
+                accumulateAudioFrame(new Uint8Array(ev.data));
+                return;
+            }
+            var msg;
+            try { msg = JSON.parse(ev.data); } catch (e) { return; }
+            if (!msg || typeof msg !== 'object') return;
+            if (msg.type === 'session_started') {
+                sessionReady = true;
+                setStatus('已连接');
+                if (pendingText !== null) {
+                    ws.send(JSON.stringify({ action: 'stream_data', data: pendingText, input_type: 'text', request_id: newRequestId() }));
+                    pendingText = null;
+                }
+            } else if (msg.type === 'gemini_response') {
+                var text = String(msg.text == null ? '' : msg.text);
+                if (!text) return;
+                if (msg.isNewMessage === true) {
+                    replyText = text;
+                    if (pendingUserRequest) {
+                        pendingUserRequest = false;
+                    } else {
+                        // 无进行中的用户请求 → YUI 主动搭话
+                        showProactiveStart(text);
+                    }
+                } else {
+                    replyText += text;
+                    showProactiveAppend(text);
+                }
+            } else if (msg.type === 'audio_chunk') {
+                // 一段语音的 meta 帧：speech_id 变化才表示新语音段（清空解码输出+
+                // 重置解码器）；同一段的重复 meta 不清空。
+                var sid = String(msg.speech_id || '');
+                if (sid !== audioSpeechId) {
+                    audioSpeechId = sid;
+                    audioFloatChunks = [];
+                    audioDecodeChain = Promise.resolve();
+                    if (opusDecoder) { try { opusDecoder.reset(); } catch (e) {} }
+                }
+            } else if (msg.type === 'audio_done') {
+                setStatus('已连接');
+                audioSpeechId = null;
+                flushAndPlay();
+            } else if (msg.type === 'session_failed' || msg.type === 'error') {
+                setStatus('对话暂不可用');
+            }
+        };
+    }
+
+    function newRequestId() {
+        return 'widget-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    }
+
+    // ---- 截屏主动搭话：Android 悬浮窗检测到截图后调用 ----
+    // 向 WS 发一条 screenshot_comment action，后端会让 YUI 真实生成一句
+    // 评论；回复按主动搭话（无进行中的用户请求）显示为气泡。
+    window.__nekoOnScreenshot = function () {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        if (pendingUserRequest) return;
+        ws.send(JSON.stringify({ action: 'screenshot_comment', request_id: newRequestId() }));
+    };
+
+    function send() {
+        var typed = input.value.trim();
+        if (!typed) return;
+        if (!ws || ws.readyState !== WebSocket.OPEN) { setStatus('未连接'); return; }
+        input.value = '';
+        replyText = '';
+        pendingUserRequest = true;
+        if (!sessionReady) {
+            pendingText = typed;
+            setStatus('建立会话…');
+            return;
+        }
+        setStatus('思考中…');
+        ws.send(JSON.stringify({ action: 'stream_data', data: typed, input_type: 'text', request_id: newRequestId() }));
+    }
+
+    sendBtn.addEventListener('click', send);
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+
+    // ---- 猫娘摄像头（看到世界）：Android 抓帧 → 上报主程序视觉管道 ----
+    var csrfToken = '';
+
+    function ensureCsrfToken() {
+        if (csrfToken) return Promise.resolve(csrfToken);
+        return fetch('/api/config/page_config')
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                if (j && typeof j.autostart_csrf_token === 'string') csrfToken = j.autostart_csrf_token;
+                return csrfToken;
+            })
+            .catch(function () { return csrfToken; });
+    }
+
+    // Android 抓到一帧（manual=用户叫看 / auto=定时自动）后通过 JS 桥调这里，
+    // 由页面携带 CSRF token 上报；回复按主动搭话显示为气泡。
+    window.__nekoOnCameraFrame = function (b64, trigger) {
+        if (!b64) return;
+        var t = (trigger === 'auto') ? 'auto' : 'manual';
+        ensureCsrfToken().then(function (token) {
+            fetch('/api/vision/camera-frame', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+                body: JSON.stringify({ b64: b64, trigger: t, lanlan_name: LANLAN })
+            }).catch(function () {});
+        });
+        if (t === 'manual') setStatus('看世界中…');
+    };
+
+    if (camBtn) {
+        camBtn.addEventListener('click', function () {
+            if (window.nekoCam && window.nekoCam.captureCamera) {
+                setStatus('看世界中…');
+                window.nekoCam.captureCamera();
+            } else {
+                setStatus('摄像头不可用');
+            }
+        });
+    }
+
+    fetch('/api/characters/current_catgirl')
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+            if (j && j.current_catgirl) {
+                LANLAN = j.current_catgirl;
+                input.placeholder = '给 ' + LANLAN + ' 发消息';
+            }
+        })
+        .catch(function () {})
+        .then(connect);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  mcp-search:
+    build: .
+    image: mcp-search-server
+    container_name: mcp-search-server
+    stdin_open: true
+    tty: true
+    environment:
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
+      - SEARCH_ENGINES=${SEARCH_ENGINES:-bing,baidu,360,github,zhihu}
+      - SEARCH_DISABLED_ENGINES=${SEARCH_DISABLED_ENGINES:-}
+      - SEARCH_PROXY=${SEARCH_PROXY:-}
+      - SEARCH_CONFIG_PATH=${SEARCH_CONFIG_PATH:-/app/config/mcp-search-config.json}
+      - SEARCH_CUSTOM_ENGINES=${SEARCH_CUSTOM_ENGINES:-}
+      - BRAVE_API_KEY=${BRAVE_API_KEY:-}
+      - DELAY_MODE=${DELAY_MODE:-}
+      - MOBILE_ENDPOINT=${MOBILE_ENDPOINT:-}
+      - TLS_FINGERPRINT=${TLS_FINGERPRINT:-}
+      - SESSION_ROTATION=${SESSION_ROTATION:-}
+    volumes:
+      - ./config:/app/config:ro
+      - mcp-cache:/app/.opencode
+
+volumes:
+  mcp-cache:

@@ -1,0 +1,65 @@
+[plugin]
+id = "keyboard_controller"
+name = "按键控制"
+description = "让猫娘通过键盘/鼠标操作电脑上的游戏或软件：定位目标窗口后注入按键、组合键、文本、鼠标点击、拖拽、滚轮与长按；截图+OCR 读屏并按文字定位坐标；执行 shell 命令（可带确认）；在工作区内读写文件实现 vibe-coding 迭代；监听主机音频分析频谱；自动把一天的操作整理成 Markdown 日记。默认自动启动。"
+short_description = "Control a game/software window with keyboard & mouse input, screenshot + OCR read-screen & text location, shell command execution (with confirmation), workspace file read/write for vibe-coding, host audio analysis, and auto-written Markdown diaries."
+keywords = ["按键", "键盘", "hotkey", "keyboard", "快捷键", "鼠标", "mouse", "按键控制", "操控", "game control", "输入注入", "截图", "ocr", "截屏", "screen", "screenshot", "shell", "命令", "command", "vibe-coding", "文件读写", "read file", "write file", "音频分析", "audio", "频谱", "读屏", "日记", "diary", "日志", "journal"]
+version = "0.2.0"
+entry = "plugin.plugins.keyboard_controller:KeyboardControllerPlugin"
+
+[plugin.author]
+name = "N.E.K.O"
+
+[plugin.sdk]
+recommended = ">=0.1.0,<0.2.0"
+supported = ">=0.1.0,<0.3.0"
+
+[plugin.i18n]
+default_locale = "zh-CN"
+locales_dir = "i18n"
+
+[plugin.store]
+enabled = true
+
+[plugin.ui]
+enabled = true
+
+[[plugin.ui.panel]]
+id = "main"
+title = "按键控制"
+entry = "ui/panel.tsx"
+context = "dashboard"
+permissions = ["state:read", "action:call"]
+
+[[plugin.ui.guide]]
+id = "guide"
+title = "使用说明"
+entry = "docs/guide.md"
+permissions = ["state:read"]
+
+[plugin_runtime]
+enabled = true
+auto_start = true
+timeout = 20
+startup_failure = "warn"
+
+[keyboard_controller]
+default_target_window = ""
+allow_unguided_input = false
+focus_retries = 3
+input_delay_seconds = 0.05
+default_type_delay_seconds = 0.01
+capture_max_long_edge = 1920
+ocr_result_max_chars = 2000
+save_screenshots = true
+command_timeout_seconds = 30
+command_max_output_chars = 4000
+command_default_shell = "auto"
+command_require_confirmation = true
+workspace_root = ""
+audio_capture_seconds = 4
+diary_enabled = true
+diary_dir = "memories"
+diary_auto_flush_seconds = 3600
+diary_max_events_per_day = 300
+diary_locale = "zh-CN"

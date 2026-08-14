@@ -1,0 +1,311 @@
+# SDK 参考
+
+所有插件开发 API 均从 `plugin.sdk.plugin` 导入。
+
+```python
+from plugin.sdk.plugin import (
+    # 基类
+    NekoPluginBase, PluginMeta,
+    # 装饰器
+    EntryKind, neko_plugin, plugin_entry, lifecycle, timer_interval, message,
+    on_event, custom_event, hook, before_entry, after_entry, around_entry,
+    replace_entry, quick_action, plugin, ui,
+    # LLM 工具与系统活动
+    llm_tool, LlmToolMeta, OsActivitySnapshot, get_os_activity_snapshot,
+    # 插件本地 i18n 与设置
+    PluginI18n, tr, PluginSettings, SettingsField,
+    # Result 类型
+    Ok, Err, Result, unwrap, unwrap_or,
+    # 运行时辅助工具
+    Plugins, PluginRouter, PluginConfig, PluginStore,
+    SystemInfo,
+    # 错误
+    SdkError, TransportError,
+    # 日志
+    get_plugin_logger,
+)
+```
+
+`plugin.sdk.plugin` 是受支持的开发者导入面。根包 `plugin.sdk` 有意只暴露保守的共享子集；不要假定插件专用 helper 都会从根包再次导出。
+
+## NekoPluginBase
+
+所有插件必须继承 `NekoPluginBase`。
+
+```python
+@neko_plugin
+class MyPlugin(NekoPluginBase):
+    def __init__(self, ctx):
+        super().__init__(ctx)
+```
+
+### 属性
+
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `self.ctx` | `PluginContext` | 运行时上下文（由宿主注入） |
+| `self.plugin_id` | `str` | 本插件的唯一标识符 |
+| `self.config_dir` | `Path` | 包含 `plugin.toml` 的目录 |
+| `self.metadata` | `dict` | 来自 `plugin.toml` 的插件元数据 |
+| `self.bus` | `SdkBusContext` | 宿主状态的 read/watch 门面；没有 publish/emit API |
+| `self.plugins` | `Plugins` | 跨插件调用辅助工具 |
+| `self.system_info` | `SystemInfo` | 宿主系统元数据 |
+
+### 方法
+
+#### `report_status(status: dict) -> None`
+
+向宿主进程报告插件状态。
+
+```python
+self.report_status({
+    "status": "processing",
+    "progress": 50,
+    "message": "Halfway done..."
+})
+```
+
+#### `push_message(**kwargs) -> PushMessageResult`
+
+使用 v2 schema 向宿主系统推送消息。
+
+```python
+result = self.push_message(
+    source="my_feature",
+    visibility=["chat"],       # []、["chat"]、["hud"] 或二者
+    ai_behavior="blind",       # "respond"、"read"、"blind"
+    parts=[{"type": "text", "text": "任务已完成"}],
+    priority=5,
+)
+
+if not result["submitted"]:
+    # 保留本地状态；重试和去重仍由插件自行决定。
+    self.logger.warning("消息提交失败：%s", result["reason"])
+```
+
+`submitted=True` 只表示 SDK 的权威本地提交路径已接收 payload，并由 SDK 接管后续
+提交责任；它不表示宿主已经消费、模型已经生成或音频已经播放。
+拒绝结果使用稳定的 `backpressure`、`transport_error` 或
+`transport_unavailable` reason，且不会包含消息正文或原始异常文本。拒绝结果还会携带
+兼容旧调用方的 `ok=False`；新代码应以 `submitted` 为正式判据。
+
+v1 字段（`message_type`、`content`、`delivery`、`reply` 及其他旧别名）已经弃用，但当前源码仍会转换。请立即迁移；本文档不保证确切移除版本。参见[迁移指南](./migration-v0.9#push-message-v2)。
+
+#### `data_path(*parts) -> Path`
+
+获取插件 `data/` 目录下的路径。
+
+```python
+db_path = self.data_path("cache.db")  # → <plugin_dir>/data/cache.db
+```
+
+#### `register_dynamic_entry(entry_id, handler, ...) -> bool`
+
+在运行时注册入口点（非通过装饰器）。
+
+```python
+self.register_dynamic_entry(
+    entry_id="dynamic_greet",
+    handler=lambda name="World", **_: Ok({"msg": f"Hi {name}"}),
+    name="Dynamic Greet",
+    description="A dynamically registered greeting",
+)
+```
+
+#### `unregister_dynamic_entry(entry_id) -> bool`
+
+移除一个动态注册的入口点。
+
+#### `list_entries(include_disabled=False) -> list[dict]`
+
+列出所有入口点（静态 + 动态）。
+
+#### `enable_entry(entry_id) / disable_entry(entry_id) -> bool`
+
+在运行时启用或禁用动态入口点。
+
+#### `register_static_ui(directory, *, index_file, cache_control) -> bool`
+
+为本插件注册一个静态 Web UI 目录。
+
+```python
+self.register_static_ui("static")  # 提供 <plugin_dir>/static/index.html 服务
+```
+
+#### `include_router(router, *, prefix) -> None`
+
+挂载一个 `PluginRouter`，用于组织大型或按功能拆分的普通 Plugin。
+
+相关方法还有 `exclude_router(router_or_name) -> bool`、`get_router(name)` 和 `list_routers()`。Router 不能作为 manifest 的 `[plugin].entry`，而且这条挂载路径不会自动调用 `on_mount` / `on_unmount`。
+
+#### Hosted/静态 UI 与列表操作
+
+Hosted TSX 使用导出的 `ui` namespace 和 manifest surface，详见 [Hosted UI](./hosted-ui)。旧式静态 UI 使用 `register_static_ui(...)`。列表行操作使用 `set_list_actions(...)`、`register_list_action(...)`、`clear_list_actions()` 和 `get_list_actions()` 管理。
+
+#### LLM 工具方法
+
+`register_llm_tool(...)`、`unregister_llm_tool(name)` 和 `list_llm_tools()` 是 `@llm_tool` 的命令式对应接口。它们注册对话期工具，不是用户插件 Agent 入口。详见 [LLM Tool Calling](./tool-calling)。
+
+#### `run_update(**kwargs) -> object`（异步）
+
+在长时间运行的操作期间向宿主发送更新。
+
+#### `export_push(**kwargs) -> object`（异步）
+
+向宿主推送导出数据。
+
+#### `finish(**kwargs) -> Any`（异步）
+
+向宿主发送任务完成信号。
+
+### 回复控制
+
+`finish()` 方法接受 `reply` 参数（默认 `True`），用于控制插件结果是否触发角色说话。
+
+```python
+# 正常：角色会播报结果
+return await self.finish(data={"summary": "完成"}, reply=True)
+
+# 静默：结果会记录但角色不说话
+return await self.finish(data={"summary": "完成"}, reply=False)
+```
+
+### LLM 结果字段过滤
+
+通过 `@plugin_entry` 装饰器（静态入口）或 `register_dynamic_entry()`（动态入口）的 `llm_result_fields` 参数，控制主 LLM 能看到结果中的哪些字段。未列出的字段不会出现在 LLM 提示中，但仍保存在任务注册表中。
+
+```python
+# 静态入口
+@plugin_entry(llm_result_fields=["summary"])
+async def search(self, query: str):
+    return await self.finish(data={"summary": "找到3条结果", "raw_results": [...]})
+
+# 动态入口
+self.register_dynamic_entry(
+    entry_id="my-tool",
+    handler=handler,
+    llm_result_fields=["summary"],
+)
+```
+
+---
+
+## Result 类型：Ok / Err
+
+SDK 使用受 Rust 启发的 Result 类型进行错误处理，而非异常。
+
+```python
+from plugin.sdk.plugin import Ok, Err, unwrap, unwrap_or
+
+# 返回成功
+return Ok({"data": result})
+
+# 返回错误
+return Err(SdkError("something went wrong"))
+
+# 使用结果
+result = await self.plugins.call_entry("other:do_stuff")
+if isinstance(result, Ok):
+    data = result.value
+else:
+    error = result.error
+    self.logger.error(f"Call failed: {error}")
+
+# 辅助函数
+value = unwrap(result)           # 如果是 Err 则抛出异常
+value = unwrap_or(result, None)  # 如果是 Err 则返回默认值
+```
+
+---
+
+## Plugins（跨插件调用）
+
+通过 `self.plugins` 访问。
+
+```python
+# 列出所有插件
+result = await self.plugins.list()
+
+# 仅列出已启用的插件
+result = await self.plugins.list(enabled=True)
+
+# 获取插件 ID 列表
+result = await self.plugins.list_ids()
+
+# 检查插件是否存在
+result = await self.plugins.exists("other_plugin")
+
+# 调用另一个插件的入口点
+result = await self.plugins.call_entry("other_plugin:do_work", {"key": "value"})
+
+# 调用并确保返回 JSON 对象
+result = await self.plugins.call_entry_json("other_plugin:get_data")
+
+# 要求某个插件存在且已启用
+result = await self.plugins.require_enabled("dependency_plugin")
+```
+
+所有方法返回 `Result` 类型 — 在使用 `.value` 之前，请先用 `isinstance(result, Ok)` 检查。
+
+---
+
+## PluginStore（持久化存储）
+
+通过 `self.store` 访问（由宿主在插件构造时预先创建并注入，无需自己实例化）。
+
+`PluginStore` 的所有方法都返回 `Result`，需用 `unwrap_or(...)` 解包。
+
+```python
+unwrap_or(await self.store.set("key", {"count": 42}), None)
+value = unwrap_or(await self.store.get("key"), None)  # → {"count": 42}
+```
+
+---
+
+## SystemInfo
+
+通过 `self.system_info` 访问。这些方法都返回 `Result`，需用 `unwrap_or(...)` 解包。
+
+```python
+config = unwrap_or(await self.system_info.get_system_config(), {})
+settings = unwrap_or(await self.system_info.get_server_settings(), {})
+python_env = unwrap_or(await self.system_info.get_python_env(), {})
+```
+
+---
+
+## PluginContext (ctx)
+
+`ctx` 对象在构造时由宿主注入。
+
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `ctx.plugin_id` | `str` | 插件标识符 |
+| `ctx.config_path` | `Path` | `plugin.toml` 的路径 |
+| `ctx.logger` | `Logger` | 日志记录器实例 |
+| `ctx.bus` | `SdkBusContext` | 宿主状态的 read/watch 门面 |
+| `ctx.metadata` | `dict` | 插件元数据 |
+
+### Bus 与 Memory
+
+在异步入口中，先 `await get()`，再使用本地列表操作：
+
+```python
+events = await self.bus.events.get(plugin_id=self.plugin_id, max_count=50)
+recent = events.filter(priority_min=1).sort(by="timestamp", reverse=True).limit(20)
+
+records = await self.bus.memory.get(bucket_id="default", limit=20)
+```
+
+列表接口为 `filter` / `where`、`sort`、`limit`、`watch`。可调用形式 `filter(predicate)`、`where(predicate)` 和 `sort(key=...)` 仅处理本地快照；可重放的 watcher 链必须使用结构化 `filter(field=value, ...)` 与 `sort(by=...)`。只有 `messages`、`events`、`lifecycle` 支持 `watch()`；`conversations` 与 `memory` 是只读快照。watcher 仅接受 `add`、`del`、`change`。
+
+`bus.memory` 保存的是有容量上限、只驻留内存的近期用户话语事件（TTL 为一小时），与角色持久化的事实、反思和人格相互独立。`ctx.query_memory(...)` 只为兼容而保留，它调用已弃用的占位端点，不执行语义召回。
+
+### 优先级等级
+
+| 范围 | 等级 | 使用场景 |
+|------|------|----------|
+| 0-2 | 低 | 信息性消息 |
+| 3-5 | 中 | 一般通知 |
+| 6-8 | 高 | 重要通知 |
+| 9-10 | 紧急 | 需要立即处理 |

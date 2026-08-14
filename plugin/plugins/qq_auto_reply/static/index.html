@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title data-i18n="ui.index.title">QQ 接入方式</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+.card { background:#fff; border-radius:12px; padding:36px 28px; text-align:center; cursor:pointer; transition:.2s; border:2px solid #e2e8f0; width:280px; }
+.card:hover { border-color:#6366f1; box-shadow:0 4px 16px rgba(99,102,241,.12); }
+.card .icon { font-size:42px; margin-bottom:14px; }
+.card h2 { font-size:18px; margin-bottom:10px; color:#1a1a2e; }
+.card p { font-size:12px; color:#666; line-height:1.7; }
+.card .tag { display:inline-block; padding:2px 10px; border-radius:4px; font-size:11px; font-weight:600; margin-top:12px; }
+.tag-warn { background:rgba(245,158,11,.12); color:#f59e0b; }
+.tag-ok { background:rgba(34,197,94,.12); color:#22c55e; }
+.wrap { display:flex; gap:28px; flex-wrap:wrap; justify-content:center; align-items:flex-start; }
+h1 { font-size:22px; color:#1a1a2e; text-align:center; margin-bottom:6px; width:100%; }
+.sub { color:#999; font-size:13px; text-align:center; margin-bottom:28px; width:100%; }
+</style>
+</head>
+<body>
+<div style="max-width:700px;">
+    <h1 data-i18n="ui.index.title">QQ 接入方式</h1>
+    <p class="sub" data-i18n="ui.index.subtitle">请选择一种连接方式。不同方式的配置流程不同，可随时切换。</p>
+    <div class="wrap">
+        <div class="card" onclick="go('napcat')">
+            <div class="icon">N</div>
+            <h2>NapCat</h2>
+            <p>
+                <span data-i18n="ui.index.napcat.desc1">需要部署 NapCat 进程</span><br>
+                <span data-i18n="ui.index.napcat.desc2">支持 QQ 扫码登录</span><br>
+                <span data-i18n="ui.index.napcat.desc3">可接收群聊</span><strong>全部消息</strong><br>
+                <span data-i18n="ui.index.napcat.desc4">支持戳一戳、表情包等完整能力</span>
+            </p>
+            <span class="tag tag-warn" data-i18n="ui.index.napcat.tag">全功能 · 多群聊</span>
+        </div>
+        <div class="card" onclick="go('open_platform')">
+            <div class="icon">Q</div>
+            <h2>QQ 开放平台</h2>
+            <p>
+                <span data-i18n="ui.index.openplat.desc1">无需额外进程</span><br>
+                <span data-i18n="ui.index.openplat.desc2">AppID + 密钥即可接入</span><br>
+                <span data-i18n="ui.index.openplat.desc3">仅接收 </span><strong>@机器人</strong> 消息<br>
+                <span data-i18n="ui.index.openplat.desc4">支持 Markdown、按钮模板</span>
+            </p>
+            <span class="tag tag-ok" data-i18n="ui.index.openplat.tag">轻量 · 指令式</span>
+        </div>
+    </div>
+</div>
+<script src="i18n.js"></script>
+<script>
+function t(key,fallback){return window.I18n&&typeof window.I18n.t==='function'?window.I18n.t(key,fallback):(fallback||key)}
+function go(mode) {
+    localStorage.setItem('qq_connection_mode', mode);
+    location.href = mode === 'napcat' ? 'napcat.html' : 'open_platform.html';
+}
+</script>
+</body>
+</html>

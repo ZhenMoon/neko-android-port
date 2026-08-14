@@ -1,0 +1,27 @@
+{
+  "name": "mcp-search-server",
+  "version": "1.2.0",
+  "description": "多引擎聚合搜索本地 MCP 服务器 - 9 引擎并行，模糊去重、正文提取、深度研究，自定义场景，自定义搜索引擎，反爬增强，可选无头浏览器。Local multi-engine MCP search server: 9 engines, fuzzy dedup, page fetch, deep research, custom profiles, custom engines, anti-scraping, optional headless browser.",
+  "type": "module",
+  "bin": {
+    "mcp-search": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "dev": "tsc && node build/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.2",
+    "@mozilla/readability": "^0.6.0",
+    "cheerio": "^1.0.0",
+    "jsdom": "^30.0.0",
+    "puppeteer-core": "^25.4.0"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jsdom": "^28.0.3",
+    "@types/node": "^20.17.10",
+    "typescript": "^5.3.3"
+  }
+}

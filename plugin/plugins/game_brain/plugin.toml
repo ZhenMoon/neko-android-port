@@ -1,0 +1,77 @@
+[plugin]
+id = "game_brain"
+name = "游戏大脑"
+description = "教猫娘打游戏的通用框架：AI 先通过 MCP 多引擎搜索（mcp-search-server）玩法并提炼出该游戏的接口配置，生成可复用的基础操作库；之后把用户自然语言目标拆成操作序列，分段执行并截图+OCR 反馈闭环，根据游戏内反馈自动调整。底层操作复用 keyboard_controller，攻略搜索复用 mcp_adapter + mcp-search-server。所有学习产物与对局记录保存在本地。"
+short_description = "Train the catgirl to play games: AI searches gameplay via MCP multi-engine search, builds a per-game interface config + reusable operation library, then turns natural-language goals into executed action sequences with screenshot-based feedback loops."
+keywords = ["游戏", "game", "攻略", "guide", "玩法", "操作", "automation", "自动玩", "ai gaming", "训练", "catgirl", "玩", "mcp", "search"]
+version = "0.1.0"
+entry = "plugin.plugins.game_brain:GameBrainPlugin"
+
+[plugin.author]
+name = "N.E.K.O"
+
+[plugin.sdk]
+recommended = ">=0.1.0,<0.2.0"
+supported = ">=0.1.0,<0.3.0"
+
+[plugin.i18n]
+default_locale = "zh-CN"
+locales_dir = "i18n"
+
+[plugin.store]
+enabled = true
+
+[plugin.ui]
+enabled = true
+
+[[plugin.ui.panel]]
+id = "main"
+title = "游戏大脑"
+entry = "ui/panel.tsx"
+context = "dashboard"
+permissions = ["state:read", "action:call"]
+
+[[plugin.ui.guide]]
+id = "guide"
+title = "使用说明"
+entry = "docs/guide.md"
+permissions = ["state:read"]
+
+[plugin_runtime]
+enabled = true
+auto_start = true
+timeout = 20
+startup_failure = "warn"
+
+[game_brain]
+# LLM 文本模型配置（面板可改，未配置时从主系统 cloud 配置回退）
+# llm_url = ""
+# llm_api_key = ""
+# llm_model = ""
+# LLM 视觉模型配置（反馈闭环看截图用；留空则尝试用文本模型多模态）
+# vision_url = ""
+# vision_api_key = ""
+# vision_model = ""
+# 攻略搜索：通过 mcp_adapter 调用外部 mcp-search-server（唯一搜索通道，不再用 web_search）。
+# 前置：mcp_adapter 插件已启用，且配置了 stdio server，命令指向本插件
+#       third_party/mcp-search-server/build/index.js。默认 server 名为 "search"。
+search_mcp_server = "search"
+search_mcp_timeout_ms = 25000
+# 搜索使用的引擎列表（mcp-search-server 支持：duckduckgo/bing/sogou/baidu/brave/github/zhihu/360/csdn）
+search_engines = ["bing", "baidu", "360", "github", "zhihu", "csdn"]
+# 学习时搜索几轮
+search_rounds = 3
+# 是否允许执行 LLM 生成的受限 Python 操作（默认关闭，仅参数化 JSON 步骤）
+allow_python_operations = false
+# 分段执行：每段执行的最大操作步数，之后强制截图反馈一次
+segment_max_steps = 6
+# 单局游玩的最大操作步数（安全阀，防止循环失控）
+session_max_steps = 200
+# 单步操作间隔（秒）
+step_delay_seconds = 0.3
+# 截图反馈的最短间隔（秒），避免高频截图
+feedback_min_interval_seconds = 2.0
+# 目标窗口匹配关键字（可为空，游玩前在面板/对话里指定）
+default_window_keywords = ""
+# 无目标窗口确认时是否允许操作（安全）
+allow_unguided = false

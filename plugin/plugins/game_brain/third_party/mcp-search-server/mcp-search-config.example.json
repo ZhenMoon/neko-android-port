@@ -1,0 +1,34 @@
+{
+  "customEngines": [
+    {
+      "name": "mysearch",
+      "displayName": "MySearch",
+      "searchUrl": "https://mysearch.example.com/search?q={query}&page={page}",
+      "selectors": {
+        "item": ".result-item",
+        "title": "h2 a",
+        "url": "h2 a@href",
+        "description": ".desc"
+      },
+      "headers": {
+        "Referer": "https://mysearch.example.com/"
+      },
+      "pageParam": "page",
+      "startPage": 1
+    }
+  ],
+  "rateLimits": {
+    "baidu.com": { "minDelay": 1000, "maxDelay": 3000 },
+    "so.com": { "minDelay": 800, "maxDelay": 2000 },
+    "sogou.com": { "minDelay": 1500, "maxDelay": 4000 }
+  },
+  "extraHeaders": {
+    "baidu.com": {
+      "Referer": "https://www.baidu.com/",
+      "Connection": "keep-alive"
+    },
+    "so.com": {
+      "Referer": "https://www.so.com/"
+    }
+  }
+}

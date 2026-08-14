@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/floating_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFFFF"
+    android:clipToOutline="true">
+
+    <LinearLayout
+        android:id="@+id/full_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="#FFE8F6FF"
+            android:paddingStart="10dp"
+            android:paddingEnd="4dp">
+
+            <TextView
+                android:id="@+id/floating_drag"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="N.E.K.O 猫娘"
+                android:textSize="13sp"
+                android:textColor="#FF335566"
+                android:gravity="center_vertical"
+                android:ellipsize="end"
+                android:singleLine="true" />
+
+            <Button
+                android:id="@+id/floating_minimize"
+                android:layout_width="32dp"
+                android:layout_height="28dp"
+                android:text="—"
+                android:textSize="14sp"
+                android:padding="0dp"
+                android:minWidth="0dp"
+                android:background="@android:drawable/btn_default" />
+
+            <Button
+                android:id="@+id/floating_camera"
+                android:layout_width="34dp"
+                android:layout_height="28dp"
+                android:text="看"
+                android:textSize="12sp"
+                android:padding="0dp"
+                android:minWidth="0dp"
+                android:background="@android:drawable/btn_default" />
+
+            <Button
+                android:id="@+id/floating_open"
+                android:layout_width="34dp"
+                android:layout_height="28dp"
+                android:text="主页"
+                android:textSize="11sp"
+                android:padding="0dp"
+                android:minWidth="0dp"
+                android:background="@android:drawable/btn_default" />
+
+            <Button
+                android:id="@+id/floating_close"
+                android:layout_width="34dp"
+                android:layout_height="28dp"
+                android:text="✕"
+                android:textSize="12sp"
+                android:padding="0dp"
+                android:minWidth="0dp"
+                android:background="@android:drawable/btn_default" />
+        </LinearLayout>
+
+        <WebView
+            android:id="@+id/floating_webview"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/mini_view"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:background="#FF4AA8E8"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/floating_mini_drag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="NEKO"
+            android:textSize="10sp"
+            android:textColor="#FFFFFFFF"
+            android:gravity="center" />
+    </LinearLayout>
+</FrameLayout>
